@@ -1,0 +1,15 @@
+# 录制管线与成片（体积大，不入库）
+_rec/
+out/
+clips/
+node_modules/
+
+# 工作区数据（平台本地文件）
+.workbuddy/
+
+# Toy 发布包是根目录内容的副本
+_toy/
+
+# 临时截图
+chk/
+*.log

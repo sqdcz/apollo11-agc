@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>阿波罗 11 号 · 完整任务 3D 模拟</title>
+<style>
+  :root{
+    --bg:#05070d; --panel:#0c1320; --panel2:#111c2e; --line:#1d2c44;
+    --txt:#d8e2f0; --muted:#8aa0bd; --accent:#5ec8ff; --warn:#ffb454;
+    --ok:#52e0a0; --bad:#ff6b6b; --mono:"Consolas","SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+  #app{display:flex;height:100vh;width:100vw}
+  #stage{position:relative;flex:1;min-width:0;background:radial-gradient(circle at 50% 30%,#0a1426,#02040a 80%)}
+  #scene{display:block;width:100%;height:100%}
+  /* 顶部时间线 */
+  #timeline{position:absolute;top:0;left:0;right:0;padding:8px 12px 10px;
+    background:linear-gradient(180deg,rgba(5,7,13,.9),transparent);z-index:5}
+  #tlTitle{font-size:12px;color:var(--muted);letter-spacing:1px;margin-bottom:6px}
+  #tlBar{display:flex;gap:4px}
+  .tlSeg{flex:1;background:rgba(20,32,52,.6);border:1px solid var(--line);border-radius:6px;
+    padding:5px 4px;text-align:center;font-size:11px;cursor:pointer;color:var(--muted);transition:.15s;position:relative;overflow:hidden}
+  .tlSeg .nm{position:relative;z-index:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tlSeg .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(94,200,255,.25);z-index:1}
+  .tlSeg.active{color:var(--accent);border-color:var(--accent)}
+  .tlSeg.done{color:var(--ok);border-color:#1c4a3a}
+  /* 顶部状态条 */
+  #topbar{position:absolute;top:64px;left:0;right:0;padding:6px 14px;display:flex;gap:14px;align-items:center;
+    font-size:13px;pointer-events:none}
+  #topbar .pill{background:rgba(20,32,52,.7);border:1px solid var(--line);border-radius:20px;padding:4px 12px}
+  #phaseTag{color:var(--accent);font-weight:700}
+  #alarmPill{display:none;color:var(--bad);border-color:var(--bad)}
+  /* 底部控制 */
+  #controls{position:absolute;bottom:0;left:0;right:0;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+    background:linear-gradient(0deg,rgba(5,7,13,.92),transparent)}
+  button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 16px;
+    font-size:14px;cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);color:#04121f;border-color:var(--accent);font-weight:700}
+  .slider{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  input[type=range]{accent-color:var(--accent)}
+  /* 右侧面板 */
+  #panel{width:390px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%}
+  #panel h2{font-size:14px;padding:14px 16px 8px;color:var(--accent);letter-spacing:1px}
+  .section{border-bottom:1px solid var(--line);padding:12px 16px}
+  .section .h{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  #telemetry{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tele{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2)}
+  .tele .k{font-size:11px;color:var(--muted)}
+  .tele .v{font-family:var(--mono);font-size:17px;font-weight:700;margin-top:2px}
+  .tele .u{font-size:11px;color:var(--muted);font-weight:400}
+  #phaseBox{font-size:13px;line-height:1.6}
+  #phaseBox .title{color:var(--warn);font-weight:700;font-size:14px}
+  #phaseBox p{color:var(--txt);margin-top:6px}
+  #phaseBox .code{font-family:var(--mono);font-size:11.5px;color:var(--ok);background:#06120c;border:1px solid #163;
+    border-radius:6px;padding:6px 8px;margin-top:8px;white-space:pre-wrap;line-height:1.45}
+  #log{flex:1;overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.5;padding:0 16px 12px}
+  #log .ln{padding:2px 0;border-bottom:1px dashed #16263d;color:var(--muted)}
+  #log .ln .t{color:var(--accent)}
+  #log .ln.warn{color:var(--warn)} #log .ln.ok{color:var(--ok)}
+  #facts{font-size:12.5px;line-height:1.6;color:var(--muted)}
+  #facts li{margin:6px 0 6px 16px} #facts b{color:var(--txt)}
+  ::-webkit-scrollbar{width:8px} ::-webkit-scrollbar-thumb{background:#1d2c44;border-radius:4px}
+  @media(max-width:880px){#panel{width:300px}#telemetry{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="scene"></canvas>
+    <div id="timeline">
+      <div id="tlTitle">🚀 阿波罗 11 号 · 任务时间线（点击任意阶段跳转）</div>
+      <div id="tlBar"></div>
+    </div>
+    <div id="topbar">
+      <span class="pill">任务阶段 <span id="phaseTag">—</span></span>
+      <span class="pill">MET <span id="missTime">--:--:--</span></span>
+      <span class="pill" id="alarmPill">⚠ 程序告警 1202</span>
+    </div>
+    <div id="controls">
+      <button class="primary" id="btnStart">▶ 自动播放全程</button>
+      <button id="btnPause">⏸ 暂停</button>
+      <button id="btnReset">⟲ 重置</button>
+      <div class="slider">速度 <input type="range" id="speed" min="0.5" max="10" step="0.5" value="3" /> <span id="speedVal">3×</span></div>
+      <div class="slider">视角 <input type="range" id="cam" min="0" max="100" step="1" value="35" /></div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2>📡 实时遥测 / 任务解读</h2>
+    <div class="section">
+      <div class="h" id="teleHeader">飞行遥测</div>
+      <div id="telemetry"></div>
+    </div>
+    <div class="section">
+      <div class="h">当前阶段 · 系统在做什么</div>
+      <div id="phaseBox">
+        <div class="title" id="pTitle">—</div>
+        <p id="pDesc">—</p>
+        <div class="code" id="pCode">—</div>
+      </div>
+    </div>
+    <div class="section" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="h">事件日志 / 系统解读</div>
+      <div id="log"></div>
+    </div>
+    <div class="section">
+      <div class="h">历史小知识（真实任务）</div>
+      <ul id="facts">
+        <li><b>1969-07-16</b> 发射，Saturn V 五台 F-1 发动机总推力约 34 MN。</li>
+        <li>下降程序 <b>P63/P64/P65/P66</b> 写在 Luminary099 里，存于约 72KB 固存。</li>
+        <li>着陆时 AGC 频报 <b>1202/1201</b> 程序告警，Armstrong 切手动才稳住。</li>
+        <li>点火例程有名注释 <b>"BURN_BABY_BURN – MASTER IGNITION ROUTINE"</b>。</li>
+        <li>Margaret Hamilton 团队写出这套软件，"软件工程"一词因她普及。</li>
+        <li>月面停留 <b>21.5 小时</b>，EVA 约 2.5 小时，带回 21.5 kg 月岩。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script src="three.min.js"></script>
+<script>
+(function(){
+"use strict";
+const G_MOON=1.62;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t<0?0:t>1?1:(t*t*(3-2*t));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* ============ Three.js 基础 ============ */
+const canvas=document.getElementById('scene');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x05070d,0.0009);
+const camera=new THREE.PerspectiveCamera(55,1,0.1,20000);
+scene.add(new THREE.AmbientLight(0x33405a,0.7));
+const sun=new THREE.DirectionalLight(0xfff4e0,1.4); sun.position.set(-300,500,200); scene.add(sun);
+
+(function stars(){
+  const g=new THREE.BufferGeometry(); const n=2200,pos=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const r=6000,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+    pos[i*3]=r*Math.sin(ph)*Math.cos(th);pos[i*3+1]=Math.abs(r*Math.cos(ph))*0.5+100;pos[i*3+2]=r*Math.sin(ph)*Math.sin(th);}
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0xaecbff,size:2.2,sizeAttenuation:false})));
+})();
+
+/* 天体 */
+function sphere(r,color,emis){return new THREE.Mesh(new THREE.SphereGeometry(r,48,48),
+  new THREE.MeshStandardMaterial({color,emissive:emis||0x000000,roughness:0.9}));}
+const earth=sphere(1200,0x2b6fd6,0x0a1f44); earth.position.set(0,-1200,0); scene.add(earth);
+const moon=sphere(200,0x9a9a93,0x111111); moon.visible=false; scene.add(moon);
+
+/* 月面（平面，用于表面阶段） */
+function moonTex(){
+  const c=document.createElement('canvas');c.width=c.height=1024;const x=c.getContext('2d');
+  x.fillStyle='#9a9a93';x.fillRect(0,0,1024,1024);
+  for(let i=0;i<2600;i++){const px=Math.random()*1024,py=Math.random()*1024,r=Math.random()*8+1,v=120+Math.random()*60|0;
+    x.fillStyle='rgba('+v+','+v+','+(v-6)+',0.5)';x.beginPath();x.arc(px,py,r,0,7);x.fill();}
+  for(let i=0;i<60;i++){const px=Math.random()*1024,py=Math.random()*1024,r=Math.random()*60+20;
+    const g=x.createRadialGradient(px,py,2,px,py,r);
+    g.addColorStop(0,'rgba(60,60,58,0.55)');g.addColorStop(0.8,'rgba(120,120,114,0.15)');g.addColorStop(1,'rgba(180,180,172,0)');
+    x.fillStyle=g;x.beginPath();x.arc(px,py,r,0,7);x.fill();}
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(8,8);return t;
+}
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000,1,1),
+  new THREE.MeshStandardMaterial({map:moonTex(),roughness:1,metalness:0}));
+ground.rotation.x=-Math.PI/2; ground.visible=false; scene.add(ground);
+
+/* 材质 */
+const mGold=new THREE.MeshStandardMaterial({color:0xb9892f,metalness:0.6,roughness:0.4});
+const mSilver=new THREE.MeshStandardMaterial({color:0xcfd4da,metalness:0.7,roughness:0.3});
+const mDark=new THREE.MeshStandardMaterial({color:0x3a3f47,metalness:0.5,roughness:0.6});
+const mWhite=new THREE.MeshStandardMaterial({color:0xe8eef5,metalness:0.2,roughness:0.5});
+const mBlack=new THREE.MeshStandardMaterial({color:0x20242b,metalness:0.3,roughness:0.7});
+
+/* 登月舱（表面用，原尺寸） */
+const lm=new THREE.Group();
+const descent=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.8,2.4,8),mGold);descent.position.y=1.2;lm.add(descent);
+const ascent=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.6,2.0,8),mSilver);ascent.position.y=3.4;lm.add(ascent);
+const cone=new THREE.Mesh(new THREE.ConeGeometry(2.0,1.4,8),mSilver);cone.position.y=5.1;lm.add(cone);
+for(let i=0;i<4;i++){const a=i*Math.PI/2;
+  const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,4.2,6),mDark);
+  leg.position.set(Math.cos(a)*3.0,0.4,Math.sin(a)*3.0);leg.rotation.z=Math.cos(a)*0.35;leg.rotation.x=-Math.sin(a)*0.35;lm.add(leg);
+  const foot=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.2,8),mDark);foot.position.set(Math.cos(a)*4.1,-0.6,Math.sin(a)*4.1);lm.add(foot);}
+const eng=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.9,1.0,12),mDark);eng.position.y=-0.2;lm.add(eng);
+const plume=new THREE.Mesh(new THREE.ConeGeometry(1.4,6,12),new THREE.MeshBasicMaterial({color:0x9fd8ff,transparent:true,opacity:0}));
+plume.position.y=-3.5;plume.rotation.x=Math.PI;lm.add(plume);
+lm.visible=false;scene.add(lm);
+
+/* 上升级（单独，用于上升段） */
+const ascentOnly=new THREE.Group();
+const aBody=new THREE.Mesh(new THREE.CylinderGeometry(2.0,2.6,2.0,8),mSilver);aBody.position.y=1;aBody.scale.set(1,1,1);ascentOnly.add(aBody);
+const aCone=new THREE.Mesh(new THREE.ConeGeometry(2.0,1.4,8),mSilver);aCone.position.y=2.7;ascentOnly.add(aCone);
+for(let i=0;i<4;i++){const a=i*Math.PI/2;const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,3,6),mDark);
+  leg.position.set(Math.cos(a)*2,0,Math.sin(a)*2);leg.rotation.z=Math.cos(a)*0.4;leg.rotation.x=-Math.sin(a)*0.4;ascentOnly.add(leg);}
+const aPlume=new THREE.Mesh(new THREE.ConeGeometry(1.2,5,12),new THREE.MeshBasicMaterial({color:0x9fd8ff,transparent:true,opacity:0}));
+aPlume.position.y=-2.5;aPlume.rotation.x=Math.PI;ascentOnly.add(aPlume);
+ascentOnly.visible=false;scene.add(ascentOnly);
+
+/* 指挥/服务舱 + 登月舱 组合体（空间用小尺寸） */
+const craft=new THREE.Group();
+const sm=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,3,12),mSilver);sm.position.y=0;craft.add(sm);
+const cm=new THREE.Mesh(new THREE.ConeGeometry(1.2,1.6,12),mWhite);cm.position.y=2.3;craft.add(cm);
+const lmS=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,1.6,8),mGold);lmS.position.y=-2;craft.add(lmS);
+const cPlume=new THREE.Mesh(new THREE.ConeGeometry(0.6,3,12),new THREE.MeshBasicMaterial({color:0x9fd8ff,transparent:true,opacity:0}));
+cPlume.position.y=-4;cPlume.rotation.x=Math.PI;craft.add(cPlume);
+craft.scale.set(1.4,1.4,1.4);craft.visible=false;scene.add(craft);
+
+/* 土星五号 */
+const saturn=new THREE.Group();
+const s1=new THREE.Mesh(new THREE.CylinderGeometry(3,3,16,16),mWhite);s1.position.y=8;saturn.add(s1);
+const s2=new THREE.Mesh(new THREE.CylinderGeometry(2.2,3,10,16),mWhite);s2.position.y=21;saturn.add(s2);
+const s3=new THREE.Mesh(new THREE.CylinderGeometry(1.4,2.2,6,16),mWhite);s3.position.y=29;saturn.add(s3);
+const sN=new THREE.Mesh(new THREE.ConeGeometry(1.4,3,16),mBlack);sN.position.y=33.5;saturn.add(sN);
+for(let i=0;i<4;i++){const a=i*Math.PI/2;const fin=new THREE.Mesh(new THREE.BoxGeometry(0.4,4,3),mBlack);
+  fin.position.set(Math.cos(a)*3,3,Math.sin(a)*3);fin.rotation.y=-a;saturn.add(fin);}
+const sFlame=new THREE.Mesh(new THREE.ConeGeometry(2.6,12,16),new THREE.MeshBasicMaterial({color:0xffa040,transparent:true,opacity:0.9}));
+sFlame.position.y=-6;sFlame.rotation.x=Math.PI;saturn.add(sFlame);
+saturn.visible=false;scene.add(saturn);
+
+/* 宇航员 + 旗 */
+const astro=new THREE.Group();
+const torso=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,1.4,12),mWhite);torso.position.y=1.2;astro.add(torso);
+const helm=new THREE.Mesh(new THREE.SphereGeometry(0.45,16,16),mGold);helm.position.y=2.1;astro.add(helm);
+const pL=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.0,8),mWhite);pL.position.set(0.4,0.6,0);pL.rotation.z=0.3;astro.add(pL);
+const pR=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.0,8),mWhite);pR.position.set(-0.4,0.6,0);pR.rotation.z=-0.3;astro.add(pR);
+astro.visible=false;scene.add(astro);
+const flag=new THREE.Group();
+const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,4,8),mSilver);pole.position.y=2;flag.add(pole);
+const cloth=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.6),new THREE.MeshStandardMaterial({color:0xdddddd,side:THREE.DoubleSide}));
+cloth.position.set(1.4,3,0);flag.add(cloth);
+flag.visible=false;scene.add(flag);
+
+/* ============ 日志 / UI ============ */
+const logEl=document.getElementById('log');
+function log(msg,cls){const d=document.createElement('div');d.className='ln'+(cls?(' '+cls):'');
+  d.innerHTML='<span class="t">'+state.met+'</span> '+msg;logEl.appendChild(d);logEl.scrollTop=logEl.scrollHeight;}
+const $=id=>document.getElementById(id);
+let teleData=[['—','—',''],['—','—',''],['—','—',''],['—','—',''],['—','—',''],['—','—','']];
+function renderTele(){const g=$('telemetry');if(g.childElementCount===0){
+  for(let i=0;i<6;i++){const d=document.createElement('div');d.className='tele';
+    d.innerHTML='<div class="k" id="tk'+i+'"></div><div class="v"><span id="tv'+i+'"></span><span class="u" id="tu'+i+'"></span></div>';g.appendChild(d);}}
+  for(let i=0;i<6;i++){$('tk'+i).textContent=teleData[i][0];$('tv'+i).textContent=teleData[i][1];$('tu'+i).textContent=teleData[i][2];}}
+
+function setNarr(title,desc,code){$('pTitle').textContent=title;$('pDesc').textContent=desc;$('pCode').textContent=code;}
+
+/* ============ 全局状态 ============ */
+const state={idx:0,ct:0,running:false,speedMul:3,met:'T+00:00:00',alarm:false};
+function metStr(t){const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=Math.floor(t%60);
+  return 'T+'+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
+
+/* ============ 各章节 ============ */
+const CHAPTERS=[
+  /* 0 发射 */
+  {name:'发射',title:'发射 (Launch)',dur:18,setup(){
+    earth.visible=true;earth.position.set(0,-1200,0);earth.scale.set(1,1,1);moon.visible=false;ground.visible=false;
+    saturn.visible=true;craft.visible=false;lm.visible=false;ascentOnly.visible=false;astro.visible=false;flag.visible=false;
+    saturn.position.set(0,0,0);saturn.rotation.set(0,0,0);sFlame.material.opacity=0.9;
+    setNarr('SA-506 发射','1969-07-16，土星五号从肯尼迪角 39A 升空。五台 F-1 发动机点火，总推力约 34 MN，10 分钟内把阿波罗送入地球停泊轨道。',
+      '; Ignition Sequence Start\n; 5 x F-1 = 34 MN (7.5M lbf)\n; S-IC / S-II / S-IVB 三级');
+    teleData=[['阶段','升空',''],['高度','0','km'],['速度','0.0','km/s'],['推力','100','%'],['级','S-IC',''],['任务','地球轨道','']];
+    log('点火！土星五号升空。');
+  },update(dt){const t=state.ct/this.dur;const y=lerp(0,300,ease(t));saturn.position.y=y;
+    sFlame.material.opacity=0.7+0.3*Math.sin(state.ct*30);
+    sFlame.scale.y=1+0.2*Math.sin(state.ct*25);
+    camera.position.set(40,y+14,55);camera.lookAt(0,y+18,0);
+    teleData=[['阶段','升空',''],['高度',(y/1.5).toFixed(0),'km'],['速度',(clamp(y/40,0,7.8)).toFixed(2),'km/s'],
+      ['推力','100','%'],['级',t<0.55?'S-IC':'S-II',''],['任务','地球轨道','']];
+  }},
+  /* 1 地月转移 */
+  {name:'地月转移',title:'地月转移 (TLI)',dur:22,setup(){
+    saturn.visible=false;moon.visible=true;ground.visible=false;craft.visible=true;astro.visible=false;flag.visible=false;
+    earth.position.set(0,0,-2600);earth.scale.set(0.5,0.5,0.5);
+    moon.position.set(0,0,2200);moon.scale.set(1,1,1);
+    craft.position.set(0,0,-200);craft.rotation.set(0,0,0);cPlume.material.opacity=0;
+    setNarr('跨月入射 TLI','S-IVB 第三级再次点火约 6 分钟，给飞船附加 ~3.2 km/s，脱离地球飞向月球。随后指令/服务舱调头、对接并拖出登月舱，开始约 3 天的自由滑行。',
+      '; Trans-Lunar Injection\n; S-IVB burn ~ 3.2 km/s\n; Transposition & Docking');
+    teleData=[['阶段','TLI 滑行',''],['地月距离','384400','km'],['速度','10.8','km/s'],['飞船','CSM+LM',''],['耗时','~3 天',''],['目标','月球','']];
+    log('TLI 点火完成，飞船奔向月球。');
+  },update(dt){const t=state.ct/this.dur;
+    craft.position.z=lerp(-200,1800,ease(t));craft.position.x=Math.sin(t*6)*30;
+    earth.position.z=lerp(-2600,-5200,t);moon.position.z=lerp(2200,200,t);
+    cPlume.material.opacity=0.0;
+    const dist=Math.round(384400*(1-t*0.92));
+    camera.position.set(craft.position.x+60,40,craft.position.z-90);camera.lookAt(craft.position.x,craft.position.y,craft.position.z);
+    teleData=[['阶段','TLI 滑行',''],['地月距离',dist.toLocaleString(),'km'],['速度',(10.8-2*t).toFixed(1),'km/s'],
+      ['飞船','CSM+LM',''],['耗时',(t*3).toFixed(1),'天'],['目标','月球','']];
+  }},
+  /* 2 环月 */
+  {name:'环月',title:'环月轨道 (LOI)',dur:16,setup(){
+    saturn.visible=false;moon.visible=true;ground.visible=false;craft.visible=true;astro.visible=false;flag.visible=false;
+    earth.visible=false;moon.position.set(0,0,0);moon.scale.set(1,1,1);craft.rotation.set(0,0,0);
+    cPlume.material.opacity=0;
+    setNarr('环月捕获 LOI','服务舱主发动机反推点火，飞船被月球捕获进入环月轨道（近月点约 100 km）。绕月检查后，Collins 留守指令舱，Armstrong 与 Aldrin 进入登月舱。',
+      '; Lunar Orbit Insertion\n; SPS retro burn\n; ~ 100 km circular');
+    teleData=[['阶段','环月',''],['轨道高度','100','km'],['速度','1.6','km/s'],['周期','~2','h'],['乘员','3','人'],['状态','在轨','']];
+    log('LOI 完成，进入环月轨道。');
+  },update(dt){const t=state.ct/this.dur;const ang=t*Math.PI*2*1.2;const R=320;
+    craft.position.set(Math.cos(ang)*R,Math.sin(ang)*R*0.25,Math.sin(ang)*R);
+    craft.lookAt(0,0,0);
+    const camA=ang+0.5;camera.position.set(Math.cos(camA)*R*1.5,Math.sin(camA)*R*0.4+60,Math.sin(camA)*R*1.5);camera.lookAt(0,0,0);
+    teleData=[['阶段','环月',''],['轨道高度','100','km'],['速度','1.6','km/s'],['周期','~2','h'],['乘员','3','人'],['状态','在轨','']];
+  }},
+  /* 3 动力下降（复用制导律） */
+  {name:'动力下降',title:'动力下降 (P63→P65)',dur:120,setup(){
+    moon.visible=false;earth.visible=false;ground.visible=true;saturn.visible=false;craft.visible=false;
+    astro.visible=false;flag.visible=false;lm.visible=true;ascentOnly.visible=false;
+    S.alt=15000;S.vs=-30;S.hs=1500;S.thr=1;S.fuel=FUEL0;S.done=false;S.phase='IDLE';
+    lm.position.set(0,Math.max(0.2,S.alt*VIS),0);lm.rotation.set(0,0,0);
+    $('alarmPill').style.display='none';state.alarm=false;
+    setNarr('动力下降 (Powered Descent)','登月舱与指令舱分离后启动下降。AGC 依次执行 P63 刹车段、P64 接近段、P65 着陆段，用约 72KB 固存内的下降制导律把飞船安全放到月面。',
+      '; Luminary099\nP63 TC BANKCALL  ; 刹车\nP64 TC BANKCALL  ; 接近\nP65 TC BANKCALL  ; 着陆');
+    teleData=[['高度','15000','m'],['垂直速度','-30','m/s'],['水平速度','1500','m/s'],['油门','100','%'],['燃料','8200','kg'],['程序','P63','']];
+    log('LM 与 CSM 分离，启动动力下降。');setPhaseDesc('P63');
+  },update(dt){for(let i=0;i<Math.max(1,Math.round(state.speedMul*1.5));i++){S.t+=1/60;guidance();if(S.done)break;}
+    lm.position.y=Math.max(0.2,S.alt*VIS);
+    plume.material.opacity=(S.thr>0.05&&!S.done)?0.25+S.thr*0.5:0;plume.scale.y=0.6+S.thr*0.8;
+    const cv=parseFloat($('cam').value)/100;const ang=cv*Math.PI*2+performance.now()*0.00005;
+    camera.position.set(lm.position.x+Math.cos(ang)*26,lm.position.y+12,lm.position.z+Math.sin(ang)*26);
+    camera.lookAt(lm.position.x,lm.position.y+1.5,lm.position.z);
+    teleData=[['高度',Math.max(0,Math.round(S.alt)).toLocaleString(),'m'],['垂直速度',S.vs.toFixed(1),'m/s'],
+      ['水平速度',Math.round(S.hs).toLocaleString(),'m/s'],['油门',Math.round(S.thr*100),'%'],
+      ['燃料',Math.round(S.fuel).toLocaleString(),'kg'],['程序',S.phase==='IDLE'?'P63':S.phase,'']];
+    if(S.done){state.idx++;gotoChapter(state.idx);}
+  }},
+  /* 4 月面活动 */
+  {name:'月面活动',title:'月面活动 (EVA)',dur:18,setup(){
+    moon.visible=false;ground.visible=true;lm.visible=true;astro.visible=true;flag.visible=true;
+    saturn.visible=false;craft.visible=false;ascentOnly.visible=false;
+    lm.position.set(0,0.2,0);lm.rotation.set(0,0,0);plume.material.opacity=0;
+    astro.position.set(-8,0,-4);astro.rotation.y=0;flag.position.set(7,0,5);flag.scale.set(0,0,0);
+    setNarr('月面行走 EVA','1969-07-21，Armstrong 迈出「个人一小步」。两人展开国旗、部署科学仪器、采集月岩，月面停留 21.5 小时，EVA 约 2.5 小时。',
+      '; EVA\n; PLANT FLAG\n; COLLECT SAMPLES\n; DEPLOY EXPERIMENTS');
+    teleData=[['阶段','月面',''],['MET','102:45','h'],['舱外','2 人',''],['温度','-150','℃'],['月岩','21.5','kg'],['通讯','S-波段','']];
+    log('舱门开启，航天员出舱。');
+  },update(dt){const t=state.ct/this.dur;
+    // 宇航员走向旗子
+    const ax=lerp(-8,4,ease(clamp(t*1.3,0,1)));astro.position.set(ax,0,-4+Math.sin(state.ct*4)*0.5);astro.rotation.y=Math.PI/2;
+    // 插旗
+    const fs=clamp((t-0.5)*3,0,1);flag.scale.set(fs,fs,fs);
+    // 轻微上下"跳跃"模拟低重力
+    astro.position.y=Math.abs(Math.sin(state.ct*3))*0.3;
+    camera.position.set(20,10,24);camera.lookAt(2,1,1);
+    teleData=[['阶段','月面',''],['MET','102:45','h'],['舱外','2 人',''],['温度','-150','℃'],['月岩','21.5','kg'],['通讯','S-波段','']];
+  }},
+  /* 5 上升返回 */
+  {name:'上升返回',title:'上升级点火 (Ascent)',dur:20,setup(){
+    moon.visible=false;ground.visible=true;lm.visible=true;ascentOnly.visible=true;craft.visible=true;
+    saturn.visible=false;astro.visible=true;flag.visible=true;
+    lm.position.set(0,0.2,0);plume.material.opacity=0;
+    ascentOnly.position.set(0,3,0);aPlume.material.opacity=0;
+    craft.visible=true;craft.position.set(0,180,0);craft.rotation.set(0,0,0);cPlume.material.opacity=0;
+    setNarr('上升级起飞 + 交会','停留结束后，上升级发动机点火（约 15.6 kN），从月面起飞回到环月轨道，与留守的指令舱交会对接。',
+      '; Ascent Stage Ignition\n; ~ 15.6 kN, 7 min to orbit\n; Rendezvous & Dock');
+    teleData=[['阶段','上升',''],['高度','0','m'],['速度','0.0','m/s'],['目标','指令舱',''],['对接','轨道',''],['乘员','2','人']];
+    log('上升级点火，离开月面！');
+  },update(dt){const t=state.ct/this.dur;
+    const y=lerp(3,180,ease(t));ascentOnly.position.set(0,y,0);aPlume.material.opacity=(t<0.85)?0.8:0;
+    aPlume.scale.y=0.6+0.4*Math.sin(state.ct*20);
+    // 指令舱
+    craft.position.set(0,180,0);
+    // 接近对接
+    if(t>0.85){const k=(t-0.85)/0.15;ascentOnly.position.x=lerp(0,0,k);ascentOnly.position.y=lerp(180,180,k);}
+    camera.position.set(40,y*0.6+20,50);camera.lookAt(0,y,0);
+    teleData=[['阶段','上升',''],['高度',Math.round(y*50).toLocaleString(),'m'],['速度',(clamp(y/12,0,1.7)).toFixed(2),'km/s'],
+      ['目标','指令舱',''],['对接',t>0.9?'完成':'进行',''],['乘员','2','人']];
+    if(t>0.9)log('与指令舱对接成功。','ok');
+  }},
+  /* 6 再入溅落 */
+  {name:'再入溅落',title:'返回地球 (TEI→Splashdown)',dur:20,setup(){
+    moon.visible=true;moon.position.set(0,0,3000);moon.scale.set(0.4,0.4,0.4);
+    earth.visible=true;earth.position.set(0,0,-1500);earth.scale.set(0.4,0.4,0.4);
+    ground.visible=false;lm.visible=false;ascentOnly.visible=false;astro.visible=false;flag.visible=false;
+    craft.visible=true;craft.position.set(0,0,1800);craft.rotation.set(0,0,0);cPlume.material.opacity=0;
+    setNarr('跨地入射 + 再入溅落','指令/服务舱点火脱离月球（TEI），约 3 天后返回。再入时以 ~11 km/s 冲入大气，降落伞减速，于 1969-07-24 在太平洋溅落。',
+      '; Trans-Earth Injection\n; Reentry ~ 11 km/s\n; Splashdown Pacific');
+    teleData=[['阶段','返回',''],['地距','384400','km'],['再入速度','11.0','km/s'],['降落伞','3','具'],['溅落','太平洋',''],['乘员','3','人']];
+    log('TEI 点火，踏上归途。');
+  },update(dt){const t=state.ct/this.dur;
+    craft.position.z=lerp(1800,-1400,ease(t));
+    earth.position.z=lerp(-1500,-700,t);
+    // 接近地球时展开"降落伞"
+    if(t>0.8){cPlume.material.opacity=0;}
+    const dist=Math.round(384400*(1-t*0.99));
+    camera.position.set(craft.position.x+50,30,craft.position.z-80);camera.lookAt(craft.position.x,craft.position.y,craft.position.z);
+    teleData=[['阶段','返回',''],['地距',dist.toLocaleString(),'km'],['再入速度',(11*(1-t*0.8)).toFixed(1),'km/s'],
+      ['降落伞',t>0.85?'已开':'—',''],['溅落',t>0.95?'完成':'太平洋',''],['乘员','3','人']];
+    if(t>0.95)log('平安溅落太平洋，任务成功！','ok');
+  }}
+];
+
+/* ============ 下降制导律（章节3 用） ============ */
+const VIS=0.012, MAX_THRUST=45000, FUEL0=8200;
+const S={alt:15000,vs:-30,hs:1500,thr:1,fuel:FUEL0,dryMass:2100,t:0,phase:'IDLE',done:false};
+const massNow=()=>S.dryMass+S.fuel;
+const PHASE_DESC={
+  P63:{tag:'P63 刹车',title:'P63 · 刹车段',desc:'高度约 15km→3km。主发动机接近满油门，全力削减水平速度（~1500→0 m/s），同时控制下降率。最耗燃料。',code:'P63 TC BANKCALL\n     CADR STARTBURN\n; 刹车：水平速度归零'},
+  P64:{tag:'P64 接近',title:'P64 · 接近段',desc:'高度约 3km→100m。水平速度近 0，转为 ~30~40 m/s 稳定下降，持续修正落点偏差。',code:'P64 TC BANKCALL\n     CADR APPROACH\n; 锁定标称下降率'},
+  P65:{tag:'P65 着陆',title:'P65 · 着陆段',desc:'高度 <100m。下降率降到 ~1~3 m/s，准备触月关机。真实任务常被 1202 告警打断转人工。',code:'P65 TC BANKCALL\n     CADR LAND\n; 触月 -> 关机'},
+  TOUCH:{tag:'已着陆',title:'Touchdown 成功',desc:'登月舱已接触月面，主发动机关机。全程由 AGC 下降制导律在 72KB 固存内完成。',code:'; CONTACT -> ENGINE OFF\n; 1969-07-20 20:17 UTC'}
+};
+function setPhaseDesc(p){S.phase=p;const P=PHASE_DESC[p];$('phaseTag').textContent=P.tag;setNarr(P.title,P.desc,P.code);}
+function guidance(){
+  let targetVs=S.alt>3000?-55:S.alt>100?-35:-2.2;
+  const tau=8,aNet=(targetVs-S.vs)/tau,aUp=G_MOON+aNet;
+  let thr=(aUp*massNow())/MAX_THRUST;thr=clamp(thr,0,1);S.thr=thr;
+  const aUpReal=thr*MAX_THRUST/massNow();S.vs+=((aUpReal-G_MOON))*(1/60);
+  S.alt+=S.vs*(1/60);if(S.alt<0)S.alt=0;
+  const hdecay=S.alt>1500?12:4;if(S.hs>0)S.hs=Math.max(0,S.hs-hdecay);
+  S.fuel=Math.max(0,S.fuel-S.thr*14.7*(1/60));
+  if(S.alt<=0&&S.phase!=='TOUCH'){S.done=true;setPhaseDesc('TOUCH');log('触月！主发动机关机。','ok');return;}
+  let np=S.phase;if(S.alt>3000)np='P63';else if(S.alt>100)np='P64';else if(S.alt>0)np='P65';
+  if(np!==S.phase&&S.phase!=='IDLE'&&S.phase!=='TOUCH'){setPhaseDesc(np);
+    if(np==='P64')log('进入 P64 接近段：水平速度归零，转入稳定下降。');
+    if(np==='P65')log('进入 P65 着陆段：开始软着陆减速。');}
+  if(!state.alarm&&S.alt<2500&&S.alt>1500&&Math.random()<0.01){state.alarm=true;$('alarmPill').style.display='inline-block';
+    log('⚠ AGC 程序告警 1202（执行器超载）—— 真实任务中曾出现。','warn');}
+}
+
+/* ============ 章节切换 ============ */
+function buildTimeline(){
+  const bar=$('tlBar');bar.innerHTML='';
+  CHAPTERS.forEach((c,i)=>{const s=document.createElement('div');s.className='tlSeg';s.id='seg'+i;
+    s.innerHTML='<div class="fill" id="fill'+i+'"></div><div class="nm">'+c.name+'</div>';
+    s.onclick=()=>gotoChapter(i);bar.appendChild(s);});
+}
+function gotoChapter(i){
+  if(i>=CHAPTERS.length){state.running=false;log('🎉 全流程演示结束。');return;}
+  state.idx=i;state.ct=0;
+  CHAPTERS[i].setup();
+  // 时间线高亮
+  for(let k=0;k<CHAPTERS.length;k++){const seg=$('seg'+k);if(!seg)continue;
+    seg.className='tlSeg'+(k===i?' active':(k<i?' done':''));$('fill'+k).style.width='0%';}
+  $('phaseTag').textContent=CHAPTERS[i].name;
+}
+
+/* ============ 主循环 ============ */
+function loop(now){
+  const dt=0.016; // 固定步长
+  if(state.running){
+    state.ct+=dt*state.speedMul;
+    state.met=metStr(computeMET());
+    const ch=CHAPTERS[state.idx];
+    if(ch)ch.update(dt*state.speedMul);
+    // 时间线进度
+    const seg=$('seg'+state.idx);if(seg)$('fill'+state.idx).style.width=clamp(state.ct/ch.dur*100,0,100)+'%';
+    if(state.ct>=ch.dur&&state.idx<CHAPTERS.length-1&&!(state.idx===3&&!S.done)){gotoChapter(state.idx+1);}
+  }
+  renderTele();
+  $('missTime').textContent=state.met;
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+// 简化 MET：按章节累计估算（仅展示）
+let metBase=[0,11040,14700,158000,165000,170000,174000]; // 各章起点(秒)示意
+function computeMET(){return (metBase[state.idx]||0)+state.ct;}
+
+/* ============ 控制 ============ */
+$('btnStart').onclick=()=>{state.running=true;};
+$('btnPause').onclick=()=>{state.running=false;};
+$('btnReset').onclick=()=>{state.running=false;state.ct=0;state.alarm=false;$('alarmPill').style.display='none';
+  logEl.innerHTML='';gotoChapter(0);log('系统已重置，点击「自动播放全程」。');};
+$('speed').oninput=e=>{state.speedMul=parseFloat(e.target.value);$('speedVal').textContent=state.speedMul+'×';};
+
+function resize(){const w=$('stage').clientWidth,h=$('stage').clientHeight;
+  renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+window.addEventListener('resize',resize);
+
+/* 初始化 */
+buildTimeline();resize();gotoChapter(0);
+log('就绪。点击「自动播放全程」按顺序演示 7 个阶段，或点顶部时间线跳到任意阶段。');
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
