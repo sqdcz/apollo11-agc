@@ -4,7 +4,9 @@
 
 七段任务 + 三段可交互模式：土星五号发射、地月转移、环月轨道、动力下降、月面出舱、上升返回、再入溅落，另外可以自己手动驾驶登月舱着陆、拉中止逃逸、开月球车在月面漫游。
 
-在线玩：<https://www.bilibili.com/toy/apollo11-agc/index.html>
+在线玩：
+- GitHub Pages：<https://sqdcz.github.io/apollo11-agc/>
+- B 站玩具平台：<https://www.bilibili.com/toy/apollo11-agc/index.html>（审核中）
 
 ![封面](docs/cover_16x9.png)
 
